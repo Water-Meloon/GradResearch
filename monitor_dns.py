@@ -11,7 +11,7 @@ import re
 
 
 DNS_PORT = 53
-THRESHOLD = 1
+THRESHOLD = 100
 
 DNS_SERVERS_IP = ['163.118.76.10', '163.118.76.81']
 DNS_SERVERS_MAC = {'163.118.76.10': '08:00:27:b4:56:e9', '163.118.76.81': '08:00:27:c7:dc:6f'}
@@ -59,7 +59,6 @@ class DNSRotation(app_manager.RyuApp):
 
         # Handle DNS responses
 
-        self._request_flow_stats(datapath)
 
 
 #request handling
@@ -103,7 +102,7 @@ class DNSRotation(app_manager.RyuApp):
         datapath.send_msg(mod)
         
         
-    def redirect_to_backup_dns(self, datapath):
+    def backup_dns_request(self, datapath):
         parser = datapath.ofproto_parser
     
     # Redirect DNS requests to backup DNS
@@ -114,15 +113,18 @@ class DNSRotation(app_manager.RyuApp):
             parser.OFPActionOutput(BACKUP_DNS_VPORT)
         ]
         self.add_flow(datapath, 10, match, actions)
-        
+      
+      
+    def backup_dns_response(self, datapath):
+        parser = datapath.ofproto_parser  
         # Redirect DNS responses from backup DNS
         match = parser.OFPMatch(in_port=BACKUP_DNS_VPORT, eth_src="08:00:27:4b:36:79",eth_type=ether_types.ETH_TYPE_IP, ip_proto=17, udp_src=DNS_PORT,ipv4_src="163.118.76.82")
         actions = [parser.OFPActionSetField(eth_src="08:00:27:c7:dc:6f"),
                 parser.OFPActionSetField(ipv4_src="163.118.76.10"),
                 parser.OFPActionOutput(HOST_PORT)
                 ] 
-        self.add_flow(datapath, 13, match, actions)
-        self._request_flow_stats(datapath)
+        self.add_flow(datapath, 11, match, actions)
+
         
 
 #fetching statistics
@@ -148,31 +150,28 @@ class DNSRotation(app_manager.RyuApp):
                 print(self.packet_counts.get(datapath_id, {}).get(DNS_SERVERS_IP[self.active_dns_index], 0))
                 self.packet_counts.setdefault(datapath_id, {})[DNS_SERVERS_IP[self.active_dns_index]] = new_packet_count
 
-                packet_difference = abs(new_packet_count - old_packet_count)
+                packet_difference = new_packet_count - old_packet_count
                 rate = packet_difference / 2  # Checking every 2 seconds
                 print("Rate: ", rate)
 
                 if rate > THRESHOLD:
                     print("Threshold exceeded. Rotating DNS server.")
-                    self.redirect_to_backup_dns(self.datapaths[datapath_id])
-                    self.stop_vm(self.active_dns_index)
-                    last_dns_index=self.active_dns_index
+                    last_index=self.active_dns_index
                     next_dns_index = (self.active_dns_index + 1) % len(DNS_SERVERS_IP)
-                    # Rotate the DNS server
-                    start_time = time.time()
                     self.start_vm(next_dns_index)
-                    self.delete_dns_response_flow(self.datapaths[datapath_id])
-                    self.active_dns_index = next_dns_index
-                    self.remove_backup_dns_flows(self.datapaths[datapath_id])
-        # Update DNS rules for the next DNS server
-                    self.install_dns_flow_rules(self.datapaths[datapath_id])
-
-                    end_time = time.time()
-                    rotation_time = end_time - start_time
-                    new_packet_count = 0
-                    old_packet_count=0
-
-                    self.logger.info(f"Server rotation time: {rotation_time:.2f} seconds")
+                    if self.detecting_state(next_dns_index) ==0:
+                        print("Next Server is operational.")
+                        self.active_dns_index = next_dns_index
+                        self.install_dns_flow_rules(self.datapaths[datapath_id])
+                        self.delete_dns_response_flow(self.datapaths[datapath_id],last_index)
+                        self.stop_vm(last_index)
+                        self.initialize_counters(datapath_id)
+                        new_packet_count=0
+                        old_packet_count=0
+                        self.logger.info(f"Server rotation finished")
+                        print("waiting for traffic becoming stable")
+                        #time.sleep(5)
+                        self._request_flow_stats(self.datapaths[datapath_id])
 
                     
     @set_ev_cls(ofp_event.EventOFPStateChange, [MAIN_DISPATCHER])
@@ -204,33 +203,45 @@ class DNSRotation(app_manager.RyuApp):
         subprocess.run(command, check=True)
         
         
-       
     def stop_vm(self,vm_name):
         vm = VM_INDEX[vm_name]
         command = ["VBoxManage", "controlvm", vm,"savestate"]
         subprocess.run(command, check=True)
+        
 
+    def detecting_state(self,dns_ip):
+        while True:
+            command = ["nslookup","google.com",DNS_SERVERS_IP[dns_ip]]
+            rs=subprocess.run(command,stdout=subprocess.DEVNULL)
+            if rs.returncode==0:
+                break
+        return rs.returncode
+        
 
-
-    def remove_backup_dns_flows(self, datapath):
+    def from_backup_to_second(self, datapath):
         parser = datapath.ofproto_parser
 
     # Match criteria for the DNS response from backup
         match_response = parser.OFPMatch(in_port=BACKUP_DNS_VPORT, eth_src="08:00:27:4b:36:79",eth_type=ether_types.ETH_TYPE_IP, ip_proto=17, udp_src=DNS_PORT,ipv4_src="163.118.76.82")
-        self.delete_flow(datapath, match_response)
+        action_response=[
+                parser.OFPActionSetField(eth_src=DNS_SERVERS_MAC[DNS_SERVERS_IP[self.active_dns_index]]),
+                parser.OFPActionSetField(ipv4_src=DNS_SERVERS_IP[self.active_dns_index]),
+                parser.OFPActionOutput(DNS_SERVERS_VPORT[self.active_dns_index])
+            ] 
+        self.add_flow(datapath, match_response)
         
         
-    def delete_dns_response_flow(self, datapath):
+    def delete_dns_response_flow(self, datapath,index):
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
 
     # Match fields based on the flow you want to delete
         match = parser.OFPMatch(
-            in_port=DNS_SERVERS_VPORT[DNS_SERVERS_IP[self.active_dns_index]],
-            eth_src=DNS_SERVERS_MAC[DNS_SERVERS_IP[self.active_dns_index]],
+            in_port=DNS_SERVERS_VPORT[DNS_SERVERS_IP[index]],
+            eth_src=DNS_SERVERS_MAC[DNS_SERVERS_IP[index]],
             eth_type=ether_types.ETH_TYPE_IP,
             ip_proto=17,  # UDP protocol
-            ipv4_src=DNS_SERVERS_IP[self.active_dns_index],
+            ipv4_src=DNS_SERVERS_IP[index],
             udp_src=DNS_PORT
         )
 
@@ -243,3 +254,11 @@ class DNSRotation(app_manager.RyuApp):
 
         mod = parser.OFPFlowMod(datapath=datapath, command=ofproto.OFPFC_DELETE, out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY, priority=11,match=match)
         datapath.send_msg(mod)
+        
+        
+    def initialize_counters(self, datapath_id):
+    # Reset all packet counters for this datapath to zero
+        for dns_ip in DNS_SERVERS_IP:
+            self.packet_counts.setdefault(datapath_id, {})[dns_ip] = 0
+        
+
