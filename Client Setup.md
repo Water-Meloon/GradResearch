@@ -1,4 +1,5 @@
 Please refer to this link for permanently changing client's /etc/resolv.conf file.
+
 Link: https://kifarunix.com/make-permanent-dns-changes-on-resolv-conf-in-linux/
 
 # Configuring Client's /etc/resolv.conf permanently
