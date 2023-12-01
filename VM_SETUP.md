@@ -53,3 +53,6 @@ Please follow the installation guide.
 You may encounter some errors when you start up a VM. You need to search the error code on Google to find the solution.
 
 Right now, you should have your first VM created!!!!
+
+![tenor_1](https://github.com/Water-Meloon/GradResearch/assets/118586545/e7d9610e-660d-4d3d-b672-2341e6471efc)
+
