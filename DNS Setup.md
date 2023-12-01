@@ -92,3 +92,11 @@ www	IN	A	163.118.76.81
 ; Custom records
 testing	IN	A	10.3.3.21
 ```
+
+# Implementing Primary-Secondary DNS servers
+
+Link: https://computingforgeeks.com/configure-slave-bind-dns-server-on-ubuntu/?expand_article=1
+
+This is the link I followed when I was creating the master-slave DNS server.
+
+The use of Primary-Secondary DNS servers is to achieve zone file transfer.
