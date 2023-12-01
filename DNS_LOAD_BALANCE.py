@@ -141,8 +141,10 @@ class DNSRotation(app_manager.RyuApp):
                 DEFAULT_PACKET_LIST.append(rate)
                 GROUP_PACKET_LIST.append(0)
                 print(DEFAULT_PACKET_LIST)
-                self.write_list_to_file(DEFAULT_PACKET_LIST, 'default_packet_list.txt')
-                self.write_list_to_file(TIME, 'time.txt')
+                self.write_list_to_file(DEFAULT_PACKET_LIST, 'default_packet_list2.txt')
+                #self.write_list_to_file(TIME, 'time.txt')
+                self.write_list_to_file(GROUP_PACKET_LIST, 'group_packet_list2.txt')
+                #self.write_list_to_file(GROUP_TIME, 'group_time.txt')
                 #if rate > VM_STARTUP_THRESHOLD and not self.vm_startup_initiated :
                     #print("VM is starting up....")
                     #self.start_vm(1)
@@ -191,8 +193,8 @@ class DNSRotation(app_manager.RyuApp):
                 GROUP_PACKET_LIST.append(rate2)
                 self.previous_packet_counts[bucket2] = packet_count_bucket1
                 print(GROUP_PACKET_LIST)
-                self.write_list_to_file(GROUP_PACKET_LIST, 'group_packet_list.txt')
-                self.write_list_to_file(GROUP_TIME, 'group_time.txt')
+                self.write_list_to_file(GROUP_PACKET_LIST, 'group_packet_list2.txt')
+                #self.write_list_to_file(GROUP_TIME, 'group_time.txt')
                 if rate1<15000:  # Check for 10% drop
                     self.logger.info("Packet count dropped. Switching to default DNS.")
                     self.delete_group_response_rule(datapath)
