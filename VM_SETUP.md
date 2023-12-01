@@ -50,4 +50,6 @@ A installation guide window should pop up.
 
 Please follow the installation guide.
 
+You may encounter some errors when you start up a VM. You need to search the error code on Google to find the solution.
+
 Right now, you should have your first VM created!!!!
